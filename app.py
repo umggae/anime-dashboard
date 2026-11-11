@@ -3,7 +3,6 @@
 data/anime.csv(collect.py가 수집)만 읽는다. 앱에서 API를 호출하지 않는다.
 실행: streamlit run app.py
 """
-import base64
 import html
 from pathlib import Path
 
@@ -47,13 +46,13 @@ SEASON_MONTHS = {"WINTER": "1~3월", "SPRING": "4~6월", "SUMMER": "7~9월", "FA
 
 # 지표 4개: 이름, 정규화된 컬럼, 가중치 키, 차트 색(파스텔)
 PARTS = [
-    ("끝까지 본다(하차율↓)", "n_drop", "drop", "#9DBFE6"),
-    ("평점", "n_score", "score", "#F1D88A"),
-    ("즐겨찾기 비율", "n_fav", "fav", "#EDA9B9"),
-    ("인기(담은 사람 수)", "n_pop", "pop", "#A8D3BF"),
+    ("끝까지 본다(하차율↓)", "n_drop", "drop", "#34C38F"),
+    ("평점", "n_score", "score", "#4C8DF6"),
+    ("즐겨찾기 비율", "n_fav", "fav", "#A98BEA"),
+    ("인기(담은 사람 수)", "n_pop", "pop", "#F6C453"),
 ]
-ACCENT, GRAY = "#E996AA", "#E2DCD3"
-FONT = "Gowun Dodum, Noto Sans KR, sans-serif"
+ACCENT, GRAY = "#3B82F6", "#D6DCE5"
+FONT = "Noto Sans KR, sans-serif"
 
 # "가중치를 바꿔도 남는 작품"을 찾기 위한 비교 시나리오 (하차율, 평점, 즐겨찾기 비율, 인기 순서)
 SCENARIOS = {
@@ -68,60 +67,48 @@ SCENARIOS = {
 # 크림색 배경, 둥근 흰 카드, 파스텔 포인트. 글꼴은 Google Fonts에서 불러온다(없으면 기본 글꼴).
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&display=swap');
 .stApp :where(p, label, div, li, a, button, input, textarea, td, th, summary, small, h1, h2, h3, h4),
-.stApp span:not([data-testid="stIconMaterial"]) { font-family: 'Gowun Dodum', 'Noto Sans KR', sans-serif; }
+.stApp span:not([data-testid="stIconMaterial"]) { font-family: 'Noto Sans KR', sans-serif; }
 .stApp h2, .stApp h3, .hero h1, .stat b, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
     font-family: 'Noto Sans KR', sans-serif !important; font-weight: 600 !important; letter-spacing: -0.02em; }
-.stat b { font-weight: 600 !important; }
-.block-container { padding-top: 2rem; max-width: 1280px; }
+.block-container { padding-top: 1.6rem; max-width: 1280px; }
 header[data-testid="stHeader"] { background: transparent; }
 
-/* 흰 둥근 카드 (차트 상자) */
+/* 흰 카드 + 얇은 테두리 */
 div[data-testid="stVerticalBlockBorderWrapper"] {
-    background: #fff; border: none !important; border-radius: 28px; padding: 0.7rem 1rem 0.4rem;
-    box-shadow: 0 2px 0 rgba(17,17,17,0.04); }
-[data-testid="stSidebar"] { border-right: none; }
-[data-testid="stExpander"] { background:#fff; border:none; border-radius:24px; }
-[data-testid="stExpander"] details { border:none; border-radius:24px; }
+    background: #fff; border: 1px solid #E6EAF0 !important; border-radius: 16px; padding: 0.9rem 1.1rem 0.5rem;
+    box-shadow: none; }
+[data-testid="stSidebar"] { background: #fff; border-right: 1px solid #E6EAF0; }
+[data-testid="stExpander"] { background: #fff; border: 1px solid #E6EAF0; border-radius: 16px; }
+[data-testid="stExpander"] details { border: none; }
 
 /* 맨 위 소개 카드 */
-.hero { display:flex; gap:24px; align-items:center; justify-content:space-between; background:#fff;
-    border-radius:32px; padding:28px 36px; overflow:hidden; }
-.hero h1 { font-size:2.5rem; line-height:1.25; margin:0 0 12px; padding:0; }
-.hero .q { font-size:1.05rem; margin:0 0 8px; }
-.hero .how { font-size:.95rem; margin:0 0 8px; color:#5b5257; }
-.hero .src { font-size:.82rem; color:#6b6660; margin:0; }
-.hero > div:first-child { flex:1; min-width:0; }
-.mascot { flex:0 0 200px; line-height:0; text-align:center; }
-.mascot img { max-width:200px; max-height:170px; width:auto; height:auto; object-fit:contain; }
-@media (max-width:1100px) { .mascot { display:none; } }
-@media (max-width:760px) { .mascot { display:none; } .hero h1 { font-size:1.9rem; } .hero { padding:22px; } }
+.hero { background: #fff; border: 1px solid #E6EAF0; border-radius: 16px; padding: 22px 28px; }
+.hero h1 { font-size: 1.75rem; line-height: 1.3; margin: 0 0 8px; padding: 0; }
+.hero .kick { font-size: .8rem; color: #3B82F6; font-weight: 600; margin: 0 0 6px; }
+.hero .q { font-size: 1rem; margin: 0 0 6px; color: #1F2937; }
+.hero .how { font-size: .9rem; margin: 0 0 6px; color: #6B7280; }
+.hero .src { font-size: .8rem; color: #9AA3AF; margin: 0; }
 
-/* 요약 숫자 카드 */
-.stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:14px; margin:16px 0 10px; }
-.stat { border-radius:24px; padding:16px 20px; }
-.stat span { font-size:.85rem; display:block; opacity:.75; }
-.stat b { font-size:1.9rem; line-height:1.25; display:block; word-break:keep-all; }
-.stat.long b { font-size:1.2rem; }
-.stat em { font-style:normal; font-size:.85rem; }
-.yellow { background:#F8EBC0; } .pink { background:#F6D6DC; } .mint { background:#D3E9DE; } .blue { background:#D3E3F5; }
+/* 요약 숫자: 흰 카드 안의 회색 타일 */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px;
+    background: #fff; border: 1px solid #E6EAF0; border-radius: 16px; padding: 14px; margin: 14px 0 10px; }
+.stat { border-radius: 12px; padding: 14px 18px; background: #F4F6FA; }
+.stat span { font-size: .82rem; display: block; color: #6B7280; }
+.stat b { font-size: 1.7rem; line-height: 1.3; display: block; word-break: keep-all; color: #1F2937; }
+.stat.long b { font-size: 1.15rem; }
+.stat em { font-style: normal; font-size: .82rem; color: #3B82F6; }
 
 /* 현재 조건 알약 */
-.chips { margin:4px 0 14px; }
-.chip { display:inline-block; border-radius:999px; padding:4px 14px; margin:0 6px 6px 0; font-size:.85rem; }
+.chips { margin: 4px 0 12px; }
+.chip { display: inline-block; border-radius: 999px; padding: 3px 12px; margin: 0 6px 6px 0; font-size: .82rem; font-weight: 500; }
+.chip.yellow { background: #E8F0FE; color: #1D4ED8; } .chip.pink { background: #E6F7F0; color: #157F5B; }
+.chip.mint { background: #F1ECFD; color: #6D4BC4; } .chip.blue { background: #FFF5DB; color: #9A6B00; }
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-# 맨 위 마스코트: assets/mascot.png(또는 .webp/.jpg)가 있으면 소개 카드 오른쪽에 보여 주고, 없으면 아무것도 안 보여 준다.
-def mascot_html():
-    for ext, mime in [("png", "image/png"), ("webp", "image/webp"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg")]:
-        path = Path(__file__).parent / "assets" / f"mascot.{ext}"
-        if path.exists():
-            data = base64.b64encode(path.read_bytes()).decode()
-            return f'<div class="mascot"><img src="data:{mime};base64,{data}" alt="학교 캐릭터"></div>'
-    return ""
 
 
 # ---------------------------------------------------------------- 데이터 읽기
@@ -194,11 +181,11 @@ def total_score(d, w):
 
 
 def style(fig, height=None):
-    fig.update_layout(template="plotly_white", font=dict(size=13, family=FONT, color="#111111"), height=height,
+    fig.update_layout(template="plotly_white", font=dict(size=13, family=FONT, color="#1F2937"), height=height,
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       margin=dict(l=10, r=10, t=90, b=10),
                       legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
-    fig.update_xaxes(gridcolor="#EEE8E1", zerolinecolor="#DAD4CC")
+    fig.update_xaxes(gridcolor="#EDF0F4", zerolinecolor="#D6DCE5")
     fig.update_yaxes(gridcolor="#EEE8E1")
     return fig
 
@@ -260,11 +247,12 @@ question = (f"{q_year}년 {SEASON_KO[q_season].split('(')[0]}({SEASON_MONTHS[q_s
 
 st.markdown(
     '<div class="hero"><div>'
+    '<p class="kick">2026 · TV 애니 · AniList 공개 데이터</p>'
     '<h1>2026 분기별 제일 볼만한 애니는?</h1>'
     f'<p class="q">{html.escape(question)}</p>'
     '<p class="how">평점, 인기, 끝까지 보는 사람의 비율, 즐겨찾기 비율을 합쳐서 종합 점수를 매겼어요.</p>'
     f'<p class="src">데이터: AniList(애니 이용자 커뮤니티)의 공개 데이터 · 수집 일시: {html.escape(collected_at)}</p>'
-    f'</div>{mascot_html()}</div>',
+    '</div></div>',
     unsafe_allow_html=True)
 
 # 지금 걸려 있는 조건을 알약(chip)으로 보여 준다
@@ -377,12 +365,12 @@ with left, st.container(border=True):
     x0, x1 = 10 ** g_pop_range[0], med_pop
     y0, y1 = q_score, g_score_range[1]
     fig.add_scatter(x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0], mode="lines", fill="toself",
-                    line=dict(width=0), fillcolor="rgba(241,216,138,0.40)", hoverinfo="skip",
+                    line=dict(width=0), fillcolor="rgba(76,141,246,0.10)", hoverinfo="skip",
                     name="숨은 명작 구역 (평점 상위 25% · 인기 하위 50%)")
     for mask, name, color in [(~gem, "그 외 작품", GRAY), (gem, "숨은 명작", ACCENT)]:
         sub = d[mask]
         fig.add_scatter(x=sub["popularity"], y=sub["averageScore"], mode="markers", name=name,
-                        marker=dict(size=11, color=color, line=dict(width=1.5, color="#5A4A52" if name == "숨은 명작" else "white")),
+                        marker=dict(size=11, color=color, line=dict(width=1.5, color="#1E40AF" if name == "숨은 명작" else "white")),
                         customdata=np.stack([sub["title"], sub["drop_rate"] * 100], axis=-1),
                         hovertemplate="%{customdata[0]}<br>평점 %{y}<br>담은 사람 %{x:,}명<br>"
                                       "중도 포기율 %{customdata[1]:.1f}%<extra></extra>")

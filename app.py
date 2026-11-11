@@ -1,0 +1,449 @@
+"""2026 분기별 제일 볼만한 애니는? - Streamlit 대시보드
+
+data/anime.csv(collect.py가 수집)만 읽는다. 앱에서 API를 호출하지 않는다.
+실행: streamlit run app.py
+"""
+import base64
+import html
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+import streamlit.components.v1 as components
+
+DATA_DIR = Path(__file__).parent / "data"
+TOP_N = 10
+
+st.set_page_config(page_title="2026 분기별 제일 볼만한 애니는?", layout="wide")
+
+# 브라우저가 이 페이지를 영어로 착각해 자동 번역하면 한국어 글이 이상하게 바뀐다.
+# 그래서 페이지 언어를 한국어(ko)로 알리고 '번역 금지' 표식을 단다.
+NO_TRANSLATE_JS = """<script>
+const d = window.parent.document;
+d.documentElement.lang = "ko";
+d.documentElement.setAttribute("translate", "no");
+if (!d.querySelector('meta[name="google"]')) {
+  const m = d.createElement("meta"); m.name = "google"; m.content = "notranslate"; d.head.appendChild(m);
+}
+</script>"""
+if hasattr(st, "iframe"):  # 최신 Streamlit
+    st.iframe(NO_TRANSLATE_JS, height=1)
+else:  # 예전 Streamlit
+    components.html(NO_TRANSLATE_JS, height=0)
+
+# AniList의 시즌 이름 -> 한국식 분기 이름
+SEASON_KO = {"WINTER": "1분기(겨울)", "SPRING": "2분기(봄)", "SUMMER": "3분기(여름)", "FALL": "4분기(가을)"}
+SEASON_ORDER = {"WINTER": 1, "SPRING": 2, "SUMMER": 3, "FALL": 4}
+# AniList의 장르 이름(영어) -> 화면에 보여 줄 한국어 이름. 목록에 없는 장르는 영어 그대로 보여 준다.
+GENRE_KO = {
+    "Action": "액션", "Adventure": "모험", "Comedy": "코미디", "Drama": "드라마", "Ecchi": "에치",
+    "Fantasy": "판타지", "Horror": "공포", "Mahou Shoujo": "마법소녀", "Mecha": "메카", "Music": "음악",
+    "Mystery": "미스터리", "Psychological": "심리", "Romance": "로맨스", "Sci-Fi": "SF",
+    "Slice of Life": "일상", "Sports": "스포츠", "Supernatural": "초자연", "Thriller": "스릴러",
+}
+SEASON_MONTHS = {"WINTER": "1~3월", "SPRING": "4~6월", "SUMMER": "7~9월", "FALL": "10~12월"}
+
+# 지표 4개: 이름, 정규화된 컬럼, 가중치 키, 차트 색(파스텔)
+PARTS = [
+    ("끝까지 본다(하차율↓)", "n_drop", "drop", "#9DBFE6"),
+    ("평점", "n_score", "score", "#F1D88A"),
+    ("즐겨찾기 비율", "n_fav", "fav", "#EDA9B9"),
+    ("인기(담은 사람 수)", "n_pop", "pop", "#A8D3BF"),
+]
+ACCENT, GRAY = "#E996AA", "#E2DCD3"
+FONT = "Gowun Dodum, Noto Sans KR, sans-serif"
+
+# "가중치를 바꿔도 남는 작품"을 찾기 위한 비교 시나리오 (하차율, 평점, 즐겨찾기 비율, 인기 순서)
+SCENARIOS = {
+    "균등": dict(drop=25, score=25, fav=25, pop=25),
+    "끝까지 보기 중심": dict(drop=70, score=10, fav=10, pop=10),
+    "평점 중심": dict(drop=10, score=70, fav=10, pop=10),
+    "즐겨찾기 중심": dict(drop=10, score=10, fav=70, pop=10),
+    "인기 중심": dict(drop=10, score=10, fav=10, pop=70),
+}
+
+# ---------------------------------------------------------------- 디자인 (CSS)
+# 크림색 배경, 둥근 흰 카드, 파스텔 포인트. 글꼴은 Google Fonts에서 불러온다(없으면 기본 글꼴).
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@500;600&display=swap');
+.stApp :where(p, label, div, li, a, button, input, textarea, td, th, summary, small, h1, h2, h3, h4),
+.stApp span:not([data-testid="stIconMaterial"]) { font-family: 'Gowun Dodum', 'Noto Sans KR', sans-serif; }
+.stApp h2, .stApp h3, .hero h1, .stat b, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+    font-family: 'Noto Sans KR', sans-serif !important; font-weight: 600 !important; letter-spacing: -0.02em; }
+.stat b { font-weight: 600 !important; }
+.block-container { padding-top: 2rem; max-width: 1280px; }
+header[data-testid="stHeader"] { background: transparent; }
+
+/* 흰 둥근 카드 (차트 상자) */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: #fff; border: none !important; border-radius: 28px; padding: 0.7rem 1rem 0.4rem;
+    box-shadow: 0 2px 0 rgba(17,17,17,0.04); }
+[data-testid="stSidebar"] { border-right: none; }
+[data-testid="stExpander"] { background:#fff; border:none; border-radius:24px; }
+[data-testid="stExpander"] details { border:none; border-radius:24px; }
+
+/* 맨 위 소개 카드 */
+.hero { display:flex; gap:24px; align-items:center; justify-content:space-between; background:#fff;
+    border-radius:32px; padding:28px 36px; overflow:hidden; }
+.hero h1 { font-size:2.5rem; line-height:1.25; margin:0 0 12px; padding:0; }
+.hero .q { font-size:1.05rem; margin:0 0 8px; }
+.hero .how { font-size:.95rem; margin:0 0 8px; color:#5b5257; }
+.hero .src { font-size:.82rem; color:#6b6660; margin:0; }
+.hero > div:first-child { flex:1; min-width:0; }
+.mascot { flex:0 0 200px; line-height:0; text-align:center; }
+.mascot img { max-width:200px; max-height:170px; width:auto; height:auto; object-fit:contain; }
+@media (max-width:1100px) { .mascot { display:none; } }
+@media (max-width:760px) { .mascot { display:none; } .hero h1 { font-size:1.9rem; } .hero { padding:22px; } }
+
+/* 요약 숫자 카드 */
+.stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:14px; margin:16px 0 10px; }
+.stat { border-radius:24px; padding:16px 20px; }
+.stat span { font-size:.85rem; display:block; opacity:.75; }
+.stat b { font-size:1.9rem; line-height:1.25; display:block; word-break:keep-all; }
+.stat.long b { font-size:1.2rem; }
+.stat em { font-style:normal; font-size:.85rem; }
+.yellow { background:#F8EBC0; } .pink { background:#F6D6DC; } .mint { background:#D3E9DE; } .blue { background:#D3E3F5; }
+
+/* 현재 조건 알약 */
+.chips { margin:4px 0 14px; }
+.chip { display:inline-block; border-radius:999px; padding:4px 14px; margin:0 6px 6px 0; font-size:.85rem; }
+</style>
+"""
+st.markdown(CSS, unsafe_allow_html=True)
+
+# 맨 위 마스코트: assets/mascot.png(또는 .webp/.jpg)가 있으면 소개 카드 오른쪽에 보여 주고, 없으면 아무것도 안 보여 준다.
+def mascot_html():
+    for ext, mime in [("png", "image/png"), ("webp", "image/webp"), ("jpg", "image/jpeg"), ("jpeg", "image/jpeg")]:
+        path = Path(__file__).parent / "assets" / f"mascot.{ext}"
+        if path.exists():
+            data = base64.b64encode(path.read_bytes()).decode()
+            return f'<div class="mascot"><img src="data:{mime};base64,{data}" alt="학교 캐릭터"></div>'
+    return ""
+
+
+# ---------------------------------------------------------------- 데이터 읽기
+def data_version():
+    """CSV 파일이 바뀌면 값이 바뀌는 표식. 이 값이 달라지면 캐시를 버리고 다시 읽는다."""
+    names = ["anime.csv", "title_ko.csv", "title_ko_tmdb.csv"]
+    return tuple((DATA_DIR / n).stat().st_mtime for n in names if (DATA_DIR / n).exists())
+
+
+@st.cache_data
+def load_data(version):
+    df = pd.read_csv(DATA_DIR / "anime.csv")
+
+    # 표시 제목: 직접 고친 제목(title_ko.csv) > TMDB 한국어 제목 > 영문 제목 > 일본어 원제.
+    # 로마자(romaji)는 쓰지 않는다. (일본어 원제는 알아보기 어려워서 마지막 순위, 표에는 따로 보여 준다)
+    def ko_map(filename):
+        path = DATA_DIR / filename
+        if not path.exists():
+            return {}
+        ko = pd.read_csv(path).dropna(subset=["id", "title_ko"])
+        return dict(zip(ko["id"], ko["title_ko"]))
+
+    df["title"] = (df["id"].map(ko_map("title_ko.csv"))
+                   .fillna(df["id"].map(ko_map("title_ko_tmdb.csv")))
+                   .fillna(df["title_english"]).fillna(df["title_native"]))
+
+    # 하차율 = 하차 / (보는 중 + 완료 + 하차 + 보류). 볼 예정(PLANNING)은 뺀다.
+    den = df["n_current"] + df["n_completed"] + df["n_dropped"] + df["n_paused"]
+    df["drop_rate"] = df["n_dropped"] / den.where(den > 0)
+    # 즐겨찾기 비율 = 즐겨찾기(favourites) 수 / 목록에 담은 사람 수(popularity)
+    df["fav_rate"] = df["favourites"] / df["popularity"]
+    df["genres"] = df["genres"].fillna("")
+    return df
+
+
+def quarter_name(q):
+    year, season = q.split()
+    return f"{year}년 {SEASON_KO[season]}"
+
+
+def make_label(d):
+    """차트에 쓸 짧은 제목. 너무 길면 자르고, 같은 이름이 있으면 번호를 붙인다."""
+    s = d["title"].str.slice(0, 22)
+    s = s.where(d["title"].str.len() <= 22, s + "…")
+    dup = s.groupby(s).cumcount()
+    return s.where(dup == 0, s + " (" + (dup + 1).astype(str) + ")")
+
+
+# ---------------------------------------------------------------- 점수 계산
+def minmax(s):
+    """가장 낮은 값 0, 가장 높은 값 1로 맞춘다. 값이 모두 같으면 0.5."""
+    rng = s.max() - s.min()
+    return (s - s.min()) / rng if rng > 0 else s * 0 + 0.5
+
+
+def add_normalized(d):
+    d = d.copy()
+    d["n_score"] = minmax(d["averageScore"])
+    d["n_pop"] = minmax(np.log10(d["popularity"]))  # 인기는 격차가 커서 로그를 씌운다
+    d["n_fav"] = minmax(d["fav_rate"])
+    d["n_drop"] = 1 - minmax(d["drop_rate"])  # 하차율은 낮을수록 좋으므로 뒤집는다
+    return d
+
+
+def total_score(d, w):
+    """가중 평균 x 100. 가중치 합이 100이 아니어도 비율로 환산된다."""
+    wsum = sum(w.values())
+    return (d["n_drop"] * w["drop"] + d["n_score"] * w["score"]
+            + d["n_fav"] * w["fav"] + d["n_pop"] * w["pop"]) / wsum * 100
+
+
+def style(fig, height=None):
+    fig.update_layout(template="plotly_white", font=dict(size=13, family=FONT, color="#111111"), height=height,
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      margin=dict(l=10, r=10, t=90, b=10),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0))
+    fig.update_xaxes(gridcolor="#EEE8E1", zerolinecolor="#DAD4CC")
+    fig.update_yaxes(gridcolor="#EEE8E1")
+    return fig
+
+
+df = load_data(data_version())
+
+# ---------------------------------------------------------------- 사이드바 위젯
+st.sidebar.header("조건 바꾸기")
+
+quarters = sorted(df["quarter"].unique(),
+                  key=lambda q: (int(q.split()[0]), SEASON_ORDER[q.split()[1]]), reverse=True)
+default_idx = quarters.index("2026 SUMMER") if "2026 SUMMER" in quarters else 0
+quarter = st.sidebar.selectbox("분기", quarters, index=default_idx, format_func=quarter_name)
+
+kind = st.sidebar.radio("신작 / 후속작", ["전체", "신작만", "후속작만"])
+
+dq = df[df["quarter"] == quarter]
+all_genres = sorted({g for gs in dq["genres"] for g in gs.split("|") if g})
+genres = st.sidebar.multiselect("장르 (여러 개를 고르면 하나라도 해당하는 작품)", all_genres,
+                                format_func=lambda g: GENRE_KO.get(g, g))
+
+min_pop = st.sidebar.slider("최소 인기 기준 (담은 사람 수)", 0, 30000, 5000, step=500,
+                            help="이 작품을 '내 목록'에 담은 사람의 수예요(AniList 이용자 기준). 이보다 적은 작품은 평가가 몇 명에 "
+                                 "좌우되어 불안정하니 비교에서 뺍니다. 기본값은 5,000명이에요.")
+
+st.sidebar.subheader("무엇을 더 중요하게 볼까요?")
+st.sidebar.caption("숫자가 클수록 종합 점수에 크게 반영돼요. 합이 100이 아니어도 비율로 맞춰져요.")
+w = dict(
+    drop=st.sidebar.slider("끝까지 본다 (하차율이 낮을수록 ↑)", 0, 100, 40, step=5,
+                           help="보기 시작한 사람 중 중간에 그만둔 사람(하차)의 비율이 낮을수록 높은 점수를 줘요."),
+    score=st.sidebar.slider("평점", 0, 100, 25, step=5, help="AniList 이용자들이 이 작품에 준 점수(100점 만점)의 평균이에요."),
+    fav=st.sidebar.slider("즐겨찾기 비율", 0, 100, 20, step=5,
+                          help="이 작품을 담은 사람 중에서 즐겨찾기(하트)까지 누른 사람의 비율이에요."),
+    pop=st.sidebar.slider("인기 (담은 사람 수)", 0, 100, 15, step=5,
+                          help="이 작품을 '내 목록'에 담은 사람의 수예요. 많을수록 많이 알려진 작품이에요."),
+)
+
+# ---------------------------------------------------------------- 조건에 맞게 거르기
+d = dq.copy()
+if kind == "신작만":
+    d = d[~d["has_prequel"]]
+elif kind == "후속작만":
+    d = d[d["has_prequel"]]
+if genres:
+    d = d[d["genres"].apply(lambda gs: any(g in gs.split("|") for g in genres))]
+d = d[d["popularity"] >= min_pop]
+n_before = len(d)
+d = d.dropna(subset=["averageScore", "drop_rate"]).reset_index(drop=True)
+
+# ---------------------------------------------------------------- 제목과 설명
+collected_at = df["collected_at"].iloc[0]
+
+# 질문 문장: 왼쪽에서 고른 분기, 신작/후속작, 장르에 맞게 바뀐다.
+q_year, q_season = quarter.split()
+kind_txt = {"전체": "", "신작만": "신작 ", "후속작만": "후속작 "}[kind]
+genre_txt = f"({', '.join(GENRE_KO.get(g, g) for g in genres)} 장르) " if genres else ""
+question = (f"{q_year}년 {SEASON_KO[q_season].split('(')[0]}({SEASON_MONTHS[q_season]})에 방영된 "
+            f"{kind_txt}TV 애니 {genre_txt}중 제일 볼만한 작품은 무엇인가?")
+
+st.markdown(
+    '<div class="hero"><div>'
+    '<h1>2026 분기별 제일 볼만한 애니는?</h1>'
+    f'<p class="q">{html.escape(question)}</p>'
+    '<p class="how">평점, 인기, 끝까지 보는 사람의 비율, 즐겨찾기 비율을 합쳐서 종합 점수를 매겼어요.</p>'
+    f'<p class="src">데이터: AniList(애니 이용자 커뮤니티)의 공개 데이터 · 수집 일시: {html.escape(collected_at)}</p>'
+    f'</div>{mascot_html()}</div>',
+    unsafe_allow_html=True)
+
+# 지금 걸려 있는 조건을 알약(chip)으로 보여 준다
+chips = [("yellow", quarter_name(quarter))]
+if kind != "전체":
+    chips.append(("pink", kind))
+chips += [("mint", GENRE_KO.get(g, g)) for g in genres]
+chips.append(("blue", f"담은 사람 {min_pop:,}명 이상"))
+chips.append(("yellow", f"중요도 끝까지 {w['drop']} · 평점 {w['score']} · 즐겨찾기 {w['fav']} · 인기 {w['pop']}"))
+st.markdown('<div class="chips">' + "".join(
+    f'<span class="chip {c}">{html.escape(t)}</span>' for c, t in chips) + '</div>', unsafe_allow_html=True)
+
+if sum(w.values()) == 0:
+    st.warning("중요도가 모두 0이에요. 하나 이상 올려 주세요.")
+    st.stop()
+if len(d) < 3:
+    st.warning("비교할 작품이 3개보다 적어요. 필터를 조금 풀어 주세요.")
+    st.stop()
+
+# 점수 계산 (지금 걸러진 작품들 안에서 상대평가)
+d = add_normalized(d)
+d["total"] = total_score(d, w)
+d["label"] = make_label(d)
+top = d.nlargest(TOP_N, "total")
+top_labels = set(top["label"])
+
+# ---------------------------------------------------------------- 요약 숫자
+t1 = top.iloc[0]
+long_cls = " long" if len(t1["title"]) > 12 else ""
+st.markdown(
+    '<div class="stats">'
+    f'<div class="stat yellow"><span>비교 대상 작품 수</span><b>{len(d)}개</b></div>'
+    f'<div class="stat pink{long_cls}"><span>종합 점수 1위</span><b>{html.escape(t1["title"])}</b>'
+    f'<em>{t1["total"]:.1f}점</em></div>'
+    f'<div class="stat mint"><span>중도 포기율(하차율) 중간값</span><b>{d["drop_rate"].median() * 100:.1f}%</b></div>'
+    f'<div class="stat blue"><span>평점 평균 (100점 만점)</span><b>{d["averageScore"].mean():.1f}</b></div>'
+    '</div>', unsafe_allow_html=True)
+if n_before > len(d):
+    st.caption(f"평점이나 하차율을 계산할 수 없는 작품 {n_before - len(d)}개는 제외했어요.")
+n_airing = int((d["status"] == "RELEASING").sum())
+if n_airing:
+    st.caption(f"※ 이 중 {n_airing}개는 아직 방영 중이라 숫자가 계속 변해요.")
+
+with st.expander("용어 설명 (눌러서 펼치기)"):
+    st.markdown("""
+- **인기 (담은 사람 수)**: 이 작품을 '내 목록'에 담은 사람의 수예요(AniList 이용자 기준). 많을수록 많이 알려진 작품이에요.
+- **평점**: AniList 이용자들이 이 작품에 준 점수(100점 만점)의 평균이에요.
+- **하차율 (중도 포기율)**: 보기 시작한 사람 중에서 **중간에 그만둔 사람의 비율**이에요. 낮을수록 끝까지 보게 되는 작품이에요.
+- **즐겨찾기 비율**: 이 작품을 목록에 담은 사람 중에서 **즐겨찾기(하트)까지 누른 사람의 비율**이에요. 높을수록 '꼭 간직하고 싶다'는 사람이 많은 작품이에요.
+- **종합 점수**: 위 네 가지를 같은 눈금(0~1)으로 맞춰서, 왼쪽에서 정한 중요도대로 섞은 100점 만점 점수예요.
+- **숨은 명작**: 평점은 상위 25%인데 인기는 하위 50%인 작품이에요. 아직 덜 알려졌지만 평가가 좋은 작품이에요.
+""")
+
+# 모든 분기에서 같은 눈금을 쓰기 위한 전체 범위 (분기를 바꿔도 축이 안 변하게)
+g_drop_max = df["drop_rate"].max() * 100 * 1.05
+g_pop_range = [np.log10(df["popularity"].min() * 0.8), np.log10(df["popularity"].max() * 1.2)]
+g_score_range = [df["averageScore"].min() - 3, df["averageScore"].max() + 3]
+
+# ---------------------------------------------------------------- 차트 1: 종합 점수 Top 10 (답)
+left, right = st.columns(2)
+with left, st.container(border=True):
+    st.subheader("① 종합 점수 Top 10 — 이번 질문의 답")
+    fig = go.Figure()
+    ts = top.sort_values("total", ascending=False)
+    wsum = sum(w.values())
+    for name, col, key, color in PARTS:
+        fig.add_bar(y=ts["label"], x=ts[col] * w[key] / wsum * 100, name=name, orientation="h",
+                    marker=dict(color=color, line=dict(width=0)),
+                    hovertemplate="%{y}<br>" + name + " 기여: %{x:.1f}점<extra></extra>")
+    fig.add_scatter(x=ts["total"] + 1, y=ts["label"], mode="text", text=ts["total"].round(1).astype(str),
+                    textposition="middle right", showlegend=False, hoverinfo="skip")
+    fig.update_layout(barmode="stack")
+    fig.update_xaxes(range=[0, 100], title="종합 점수 (0~100)")
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(style(fig, 460), width="stretch")
+    st.caption("막대 전체 길이가 종합 점수(100점 만점)예요. 색 조각은 네 가지 지표가 점수에 얼마나 보탬이 됐는지 보여 줘요. "
+               "점수는 지금 비교 중인 작품들 사이에서의 상대 평가예요.")
+
+# ---------------------------------------------------------------- 차트 2: 안정성
+with right, st.container(border=True):
+    st.subheader("② 중요도를 바꿔도 Top 10에 남는 작품")
+    scenarios = {"지금 슬라이더 설정": w, **SCENARIOS}
+    d["hits"] = 0
+    d["which"] = ""
+    for name, sw in scenarios.items():
+        in_top = d.index.isin(d.assign(s=total_score(d, sw)).nlargest(TOP_N, "s").index)
+        d["hits"] += in_top.astype(int)
+        d.loc[in_top, "which"] += name + ", "
+    n_sc = len(scenarios)
+    stable = d[d["hits"] > 0].sort_values(["hits", "total"], ascending=False).head(15)
+    fig = go.Figure(go.Bar(
+        y=stable["label"], x=stable["hits"], orientation="h",
+        marker=dict(color=[ACCENT if h == n_sc else GRAY for h in stable["hits"]], line=dict(width=0)),
+        text=stable["hits"], textposition="outside", customdata=stable["which"].str.rstrip(", "),
+        hovertemplate="%{y}<br>Top 10에 든 횟수: %{x}/" + str(n_sc) + "<br>%{customdata}<extra></extra>"))
+    fig.update_xaxes(range=[0, n_sc + 0.5], dtick=1, title=f"Top 10에 든 횟수 (중요도 설정 {n_sc}가지 중)")
+    fig.update_yaxes(autorange="reversed")
+    st.plotly_chart(style(fig, 460), width="stretch")
+    st.caption(f"중요도를 {n_sc}가지로 바꿔 가며(지금 설정, 균등, 끝까지 보기·평점·즐겨찾기·인기 중심) Top 10을 다시 뽑았어요. "
+               f"분홍 막대는 {n_sc}번 모두 Top 10에 든 작품, 즉 **누가 어떤 기준으로 봐도 볼만한 애니**예요. "
+               "마우스를 올리면 어떤 설정에서 들었는지 보여요.")
+
+# ---------------------------------------------------------------- 차트 3: 산점도
+left, right = st.columns(2)
+with left, st.container(border=True):
+    st.subheader("③ 평점 × 인기 — 숨은 명작 찾기")
+    q_score, med_pop = d["averageScore"].quantile(0.75), d["popularity"].median()
+    gem = (d["averageScore"] >= q_score) & (d["popularity"] <= med_pop)
+    fig = go.Figure()
+    x0, x1 = 10 ** g_pop_range[0], med_pop
+    y0, y1 = q_score, g_score_range[1]
+    fig.add_scatter(x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0], mode="lines", fill="toself",
+                    line=dict(width=0), fillcolor="rgba(241,216,138,0.40)", hoverinfo="skip",
+                    name="숨은 명작 구역 (평점 상위 25% · 인기 하위 50%)")
+    for mask, name, color in [(~gem, "그 외 작품", GRAY), (gem, "숨은 명작", ACCENT)]:
+        sub = d[mask]
+        fig.add_scatter(x=sub["popularity"], y=sub["averageScore"], mode="markers", name=name,
+                        marker=dict(size=11, color=color, line=dict(width=1.5, color="#5A4A52" if name == "숨은 명작" else "white")),
+                        customdata=np.stack([sub["title"], sub["drop_rate"] * 100], axis=-1),
+                        hovertemplate="%{customdata[0]}<br>평점 %{y}<br>담은 사람 %{x:,}명<br>"
+                                      "중도 포기율 %{customdata[1]:.1f}%<extra></extra>")
+    fig.update_xaxes(type="log", range=g_pop_range, title="인기 — 담은 사람 수 (로그 눈금)",
+                     tickvals=[300, 1000, 3000, 10000, 30000, 100000],
+                     ticktext=["300", "1천", "3천", "1만", "3만", "10만"], minor=dict(showgrid=False))
+    fig.update_yaxes(range=g_score_range, title="평점 (100점 만점)")
+    st.plotly_chart(style(fig, 460), width="stretch")
+    gem_names = "、".join(d.loc[gem, "label"].tolist()[:5]) or "없음"
+    st.caption("세로는 평점, 가로는 인기(담은 사람 수)예요. 인기 차이가 너무 커서 가로 눈금은 1천, 1만처럼 10배씩 벌어져요. "
+               f"분홍 점이 '숨은 명작'(평점 상위 25%인데 인기는 하위 50%) 후보예요: {gem_names}")
+
+# ---------------------------------------------------------------- 차트 4: 하차율
+with right, st.container(border=True):
+    st.subheader("④ 작품별 중도 포기율 (하차율)")
+    dd = d.sort_values("drop_rate")
+    in_top = dd["label"].isin(top_labels)
+    fig = go.Figure()
+    for mask, name, color in [(in_top, "종합 점수 Top 10", ACCENT), (~in_top, "그 외", GRAY)]:
+        sub = dd[mask]
+        fig.add_bar(y=sub["label"], x=sub["drop_rate"] * 100, orientation="h", name=name,
+                    marker=dict(color=color, line=dict(width=0)),
+                    hovertemplate="%{y}<br>중도 포기율 %{x:.1f}%<extra></extra>")
+    fig.update_xaxes(range=[0, g_drop_max], title="중도 포기율 (%) — 낮을수록 좋아요")
+    fig.update_yaxes(autorange="reversed", categoryorder="array", categoryarray=dd["label"])
+    st.plotly_chart(style(fig, max(460, 24 * len(dd) + 120)), width="stretch")
+    st.caption("보기 시작한 사람(보는 중·완료·그만둠·보류) 중 중간에 그만둔 사람의 비율이에요. "
+               "막대는 0%에서 시작하고 어느 분기를 골라도 같은 눈금이에요. 분홍 막대는 종합 점수 Top 10 작품이에요.")
+
+# ---------------------------------------------------------------- 표 + 집계 기준
+with st.expander("작품별 숫자 표 보기"):
+    show = d.sort_values("total", ascending=False)[
+        ["title", "title_native", "total", "averageScore", "popularity", "drop_rate", "fav_rate", "has_prequel",
+         "studio", "status"]]
+    show = show.rename(columns={"title": "제목", "title_native": "일본어 원제", "total": "종합점수",
+                                "averageScore": "평점", "popularity": "인기(담은 사람 수)",
+                                "drop_rate": "중도 포기율(하차율)", "fav_rate": "즐겨찾기 비율", "has_prequel": "후속작", "studio": "스튜디오",
+                                "status": "방영상태"})
+    st.dataframe(show.round(3), hide_index=True, width="stretch")
+
+with st.expander("점수는 어떻게 계산했나요? (집계 기준과 한계)"):
+    st.markdown(f"""
+**데이터**: 애니 이용자 커뮤니티 AniList의 공개 API에서 2026년 1~4분기 TV 애니(성인물 분류 제외)를 **{collected_at}에 한 번** 수집했어요. 앱은 이 CSV 파일만 읽어요.
+한국어 제목은 TMDB(The Movie Database) API에서 가져왔고, 없는 작품은 영문 제목으로 표시해요.
+TMDB의 제목은 시리즈 단위라 부제(예: 'OO편')가 빠진 경우가 있어요.
+
+*This product uses the TMDB API but is not endorsed or certified by TMDB.* ([themoviedb.org](https://www.themoviedb.org))
+
+**네 가지 지표**
+- 평점: AniList 이용자들이 이 작품에 준 점수(100점 만점)의 평균
+- 인기: 이 작품을 '내 목록'에 담은 사람의 수. 작품마다 격차가 커서 로그를 씌워 계산
+- 중도 포기율(하차율): 중간에 그만둔 사람 ÷ (보는 중 + 완료 + 그만둠 + 보류). 볼 예정인 사람은 제외
+- 즐겨찾기 비율: 즐겨찾기(하트)를 누른 사람 ÷ 목록에 담은 사람
+
+**종합 점수**: 네 지표를 0~1로 맞춘 뒤(중도 포기율은 낮을수록 높은 점수가 되게 뒤집어서) 중요도(가중치)대로 섞고 100점 만점으로 바꿨어요.
+지금 조건으로 걸러진 작품들끼리 비교하는 상대 점수예요. 담은 사람이 최소 기준보다 적은 작품과, 평점·중도 포기율을 계산할 수 없는 작품은 뺐어요.
+
+**한계**
+- 수집한 날의 스냅샷이라, 방영 중인 작품은 숫자가 계속 변해요.
+- 후속작은 전작을 좋아한 사람만 봐서 평점이 높게 나오는 편향이 있어요. 그래서 신작/후속작 필터를 뒀어요.
+- AniList는 해외 이용자 비중이 커서 한국 시청자의 취향과 다를 수 있어요.
+- 분기끼리는 방영 후 지난 시간이 달라서 숫자를 직접 비교하기 어려워요. 순위는 항상 한 분기 안에서만 매겨요.
+- 중도 포기율과 평점은 함께 움직이는 경향이 있어서(평점이 높은 작품은 포기율도 낮아요), 중요도를 바꿔도 결과가 크게 안 바뀔 수 있어요.
+""")

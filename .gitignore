@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 환경/편집기
+.env
+.DS_Store
+.idea/
+.vscode/
+
+# 수집 중간 산출물 (앱에는 필요 없음)
+data/raw/
+
+# 주의: data/*.csv 는 앱이 읽는 파일이므로 무시하지 않는다 (GitHub에 올라가야 배포 앱이 읽을 수 있음)

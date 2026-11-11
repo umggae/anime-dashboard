@@ -73,6 +73,7 @@ CSS = """
 .stApp h2, .stApp h3, .hero h1, .stat b, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
     font-family: 'Noto Sans KR', sans-serif !important; font-weight: 600 !important; letter-spacing: -0.02em; }
 .block-container { padding-top: 1.6rem; max-width: 1280px; }
+.stApp h3 { font-size: 1.15rem !important; }
 header[data-testid="stHeader"] { background: transparent; }
 
 /* 흰 카드 + 얇은 테두리 */
@@ -151,8 +152,8 @@ def quarter_name(q):
 
 def make_label(d):
     """차트에 쓸 짧은 제목. 너무 길면 자르고, 같은 이름이 있으면 번호를 붙인다."""
-    s = d["title"].str.slice(0, 22)
-    s = s.where(d["title"].str.len() <= 22, s + "…")
+    s = d["title"].str.slice(0, 16)
+    s = s.where(d["title"].str.len() <= 16, s + "…")
     dup = s.groupby(s).cumcount()
     return s.where(dup == 0, s + " (" + (dup + 1).astype(str) + ")")
 
@@ -320,12 +321,12 @@ with left, st.container(border=True):
     wsum = sum(w.values())
     for name, col, key, color in PARTS:
         fig.add_bar(y=ts["label"], x=ts[col] * w[key] / wsum * 100, name=name, orientation="h",
-                    marker=dict(color=color, line=dict(width=0)),
-                    hovertemplate="%{y}<br>" + name + " 기여: %{x:.1f}점<extra></extra>")
+                    marker=dict(color=color, line=dict(width=0)), customdata=ts["title"],
+                    hovertemplate="%{customdata}<br>" + name + " 기여: %{x:.1f}점<extra></extra>")
     fig.add_scatter(x=ts["total"] + 1, y=ts["label"], mode="text", text=ts["total"].round(1).astype(str),
                     textposition="middle right", showlegend=False, hoverinfo="skip")
     fig.update_layout(barmode="stack")
-    fig.update_xaxes(range=[0, 100], title="종합 점수 (0~100)")
+    fig.update_xaxes(range=[0, 112], tickvals=[0, 25, 50, 75, 100], title="종합 점수 (0~100)")
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(style(fig, 460), width="stretch")
     st.caption("막대 전체 길이가 종합 점수(100점 만점)예요. 색 조각은 네 가지 지표가 점수에 얼마나 보탬이 됐는지 보여 줘요. "
@@ -346,8 +347,9 @@ with right, st.container(border=True):
     fig = go.Figure(go.Bar(
         y=stable["label"], x=stable["hits"], orientation="h",
         marker=dict(color=[ACCENT if h == n_sc else GRAY for h in stable["hits"]], line=dict(width=0)),
-        text=stable["hits"], textposition="outside", customdata=stable["which"].str.rstrip(", "),
-        hovertemplate="%{y}<br>Top 10에 든 횟수: %{x}/" + str(n_sc) + "<br>%{customdata}<extra></extra>"))
+        text=stable["hits"], textposition="outside",
+        customdata=np.stack([stable["title"], stable["which"].str.rstrip(", ")], axis=-1),
+        hovertemplate="%{customdata[0]}<br>Top 10에 든 횟수: %{x}/" + str(n_sc) + "<br>%{customdata[1]}<extra></extra>"))
     fig.update_xaxes(range=[0, n_sc + 0.5], dtick=1, title=f"Top 10에 든 횟수 (중요도 설정 {n_sc}가지 중)")
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(style(fig, 460), width="stretch")
@@ -392,8 +394,8 @@ with right, st.container(border=True):
     for mask, name, color in [(in_top, "종합 점수 Top 10", ACCENT), (~in_top, "그 외", GRAY)]:
         sub = dd[mask]
         fig.add_bar(y=sub["label"], x=sub["drop_rate"] * 100, orientation="h", name=name,
-                    marker=dict(color=color, line=dict(width=0)),
-                    hovertemplate="%{y}<br>중도 포기율 %{x:.1f}%<extra></extra>")
+                    marker=dict(color=color, line=dict(width=0)), customdata=sub["title"],
+                    hovertemplate="%{customdata}<br>중도 포기율 %{x:.1f}%<extra></extra>")
     fig.update_xaxes(range=[0, g_drop_max], title="중도 포기율 (%) — 낮을수록 좋아요")
     fig.update_yaxes(autorange="reversed", categoryorder="array", categoryarray=dd["label"])
     st.plotly_chart(style(fig, max(460, 24 * len(dd) + 120)), width="stretch")

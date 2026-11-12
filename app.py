@@ -252,7 +252,7 @@ st.markdown(
     '<h1>2026 분기별 최고의 애니는?</h1>'
     f'<p class="q">{html.escape(question)}</p>'
     '<p class="how">평점, 인기, 끝까지 보는 사람의 비율, 즐겨찾기 비율을 합쳐서 종합 점수를 매겼어요.</p>'
-    f'<p class="src">데이터: AniList(애니 이용자 커뮤니티)의 공개 데이터 · 수집 일시: {html.escape(collected_at)}</p>'
+    f'<p class="src">데이터: AniList 공개 데이터 · 한국어 제목: TMDB · 수집 일시: {html.escape(collected_at)}</p>'
     '</div></div>',
     unsafe_allow_html=True)
 

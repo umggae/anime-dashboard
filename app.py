@@ -1,4 +1,4 @@
-"""2026 분기별 제일 볼만한 애니는? - Streamlit 대시보드
+"""2026 분기별 최고의 애니는? - Streamlit 대시보드
 
 data/anime.csv(collect.py가 수집)만 읽는다. 앱에서 API를 호출하지 않는다.
 실행: streamlit run app.py
@@ -15,7 +15,7 @@ import streamlit.components.v1 as components
 DATA_DIR = Path(__file__).parent / "data"
 TOP_N = 10
 
-st.set_page_config(page_title="2026 분기별 제일 볼만한 애니는?", layout="wide")
+st.set_page_config(page_title="2026 분기별 최고의 애니는?", layout="wide")
 
 # 브라우저가 이 페이지를 영어로 착각해 자동 번역하면 한국어 글이 이상하게 바뀐다.
 # 그래서 페이지 언어를 한국어(ko)로 알리고 '번역 금지' 표식을 단다.
@@ -244,12 +244,12 @@ q_year, q_season = quarter.split()
 kind_txt = {"전체": "", "신작만": "신작 ", "후속작만": "후속작 "}[kind]
 genre_txt = f"({', '.join(GENRE_KO.get(g, g) for g in genres)} 장르) " if genres else ""
 question = (f"{q_year}년 {SEASON_KO[q_season].split('(')[0]}({SEASON_MONTHS[q_season]})에 방영된 "
-            f"{kind_txt}TV 애니 {genre_txt}중 제일 볼만한 작품은 무엇인가?")
+            f"{kind_txt}TV 애니 {genre_txt}중 최고의 작품은 무엇인가?")
 
 st.markdown(
     '<div class="hero"><div>'
     '<p class="kick">2026 · TV 애니 · AniList 공개 데이터</p>'
-    '<h1>2026 분기별 제일 볼만한 애니는?</h1>'
+    '<h1>2026 분기별 최고의 애니는?</h1>'
     f'<p class="q">{html.escape(question)}</p>'
     '<p class="how">평점, 인기, 끝까지 보는 사람의 비율, 즐겨찾기 비율을 합쳐서 종합 점수를 매겼어요.</p>'
     f'<p class="src">데이터: AniList(애니 이용자 커뮤니티)의 공개 데이터 · 수집 일시: {html.escape(collected_at)}</p>'
@@ -262,7 +262,7 @@ if kind != "전체":
     chips.append(("pink", kind))
 chips += [("mint", GENRE_KO.get(g, g)) for g in genres]
 chips.append(("blue", f"담은 사람 {min_pop:,}명 이상"))
-chips.append(("yellow", f"중요도 끝까지 {w['drop']} · 평점 {w['score']} · 즐겨찾기 {w['fav']} · 인기 {w['pop']}"))
+chips.append(("yellow", f"중요도: 끝까지 {w['drop']} · 평점 {w['score']} · 즐겨찾기 {w['fav']} · 인기 {w['pop']}"))
 st.markdown('<div class="chips">' + "".join(
     f'<span class="chip {c}">{html.escape(t)}</span>' for c, t in chips) + '</div>', unsafe_allow_html=True)
 

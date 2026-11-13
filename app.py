@@ -465,7 +465,7 @@ with tab_p:
         else:
             st.plotly_chart(style(fig, 360), width="stretch")
             st.caption("1\\~4분기 작품을 원작 종류로 묶어 종합 점수의 **중간값**을 비교했어요. 괄호 안은 작품 수예요. "
-                       "작품 수가 적은 그룹(오리지널·기타)은 한두 작품에 크게 흔들려요.")
+                       "기타는 AniList가 따로 분류한 원작(게임·웹소설·캐릭터 프랜차이즈 등)이 섞여 있어요. 작품 수가 적은 그룹(오리지널·기타)은 한두 작품에 크게 흔들려요.")
     with right, st.container(border=True):
         st.subheader("⑥ 제작사별 종합 점수 (3편 이상)")
         fig = median_bar("studio", min_n=3)

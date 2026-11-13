@@ -52,6 +52,18 @@ PARTS = [
     ("인기(담은 사람 수)", "n_pop", "pop", "#F6C453"),
 ]
 ACCENT, GRAY = "#3B82F6", "#D6DCE5"
+# 제작사 이름(영문) -> 한국어 표기. 차트에 나오는 3편 이상 제작사만 옮겼고, 목록에 없는 곳은 원래 이름 그대로 보여 준다.
+STUDIO_KO = {
+    "LIDENFILMS": "리덴필름스", "OLM": "OLM", "Studio DEEN": "스튜디오 딘", "Studio KAI": "스튜디오 카이",
+    "Zero-G": "제로지", "SILVER LINK.": "실버 링크", "SynergySP": "시너지SP", "ENGI": "엔지",
+    "TMS Entertainment": "TMS 엔터테인먼트", "Bandai Namco Pictures": "반다이 남코 픽처스",
+    "Studio Comet": "스튜디오 코멧", "East Fish Studio": "이스트 피시 스튜디오", "Doga Kobo": "동화공방",
+    "MAPPA": "마파", "Studio Pierrot": "스튜디오 피에로", "Brain's Base": "브레인즈 베이스",
+    "project No.9": "프로젝트 No.9", "Maho Film": "마호 필름", "TROYCA": "트로이카", "MADHOUSE": "매드하우스",
+    "Sunrise": "선라이즈", "J.C.STAFF": "J.C.스태프", "bones film": "본즈 필름", "Satelight": "새틀라이트",
+    "Passione": "파시오네", "diomedéa": "디오메데아",
+}
+SOURCE_KO = {"MANGA": "만화", "LIGHT_NOVEL": "라이트노벨", "ORIGINAL": "오리지널"}  # 그 외는 '기타'
 FONT = "Noto Sans KR, sans-serif"
 
 # "가중치를 바꿔도 남는 작품"을 찾기 위한 비교 시나리오 (하차율, 평점, 즐겨찾기 비율, 인기 순서)
@@ -251,7 +263,7 @@ st.markdown(
     '<p class="kick">2026 · TV 애니 · AniList 공개 데이터</p>'
     '<h1>2026 분기별 최고의 애니는?</h1>'
     f'<p class="q">{html.escape(question)}</p>'
-    '<p class="how">평점, 인기, 끝까지 보는 사람의 비율, 즐겨찾기 비율을 합쳐서 종합 점수를 매겼어요.</p>'
+    '<p class="how">평점, 인기, 끝까지 보는 사람의 비율, 즐겨찾기 비율을 합쳐서 종합 점수를 매기고, 작품별로 한 번, 원작 종류·제작사별로 한 번 더 비교했어요.</p>'
     f'<p class="src">데이터: AniList 공개 데이터 · 한국어 제목: TMDB · 수집 일시: {html.escape(collected_at)}</p>'
     '</div></div>',
     unsafe_allow_html=True)
@@ -312,101 +324,164 @@ g_drop_max = df["drop_rate"].max() * 100 * 1.05
 g_pop_range = [np.log10(df["popularity"].min() * 0.8), np.log10(df["popularity"].max() * 1.2)]
 g_score_range = [df["averageScore"].min() - 3, df["averageScore"].max() + 3]
 
-# ---------------------------------------------------------------- 차트 1: 종합 점수 Top 10 (답)
-left, right = st.columns(2)
-with left, st.container(border=True):
-    st.subheader("① 종합 점수 Top 10 — 이번 질문의 답")
-    fig = go.Figure()
-    ts = top.sort_values("total", ascending=False)
-    wsum = sum(w.values())
-    for name, col, key, color in PARTS:
-        fig.add_bar(y=ts["label"], x=ts[col] * w[key] / wsum * 100, name=name, orientation="h",
-                    marker=dict(color=color, line=dict(width=0)), customdata=ts["title"],
-                    hovertemplate="%{customdata}<br>" + name + " 기여: %{x:.1f}점<extra></extra>")
-    fig.add_scatter(x=ts["total"] + 1, y=ts["label"], mode="text", text=ts["total"].round(1).astype(str),
-                    textposition="middle right", showlegend=False, hoverinfo="skip")
-    fig.update_layout(barmode="stack")
-    fig.update_xaxes(range=[0, 112], tickvals=[0, 25, 50, 75, 100], title="종합 점수 (0~100)")
-    fig.update_yaxes(autorange="reversed")
-    st.plotly_chart(style(fig, 460), width="stretch")
-    st.caption("막대 전체 길이가 종합 점수(100점 만점)예요. 색 조각은 네 가지 지표가 점수에 얼마나 보탬이 됐는지 보여 줘요. "
-               "점수는 지금 비교 중인 작품들 사이에서의 상대 평가예요.")
+tab_c, tab_p = st.tabs(["작품 비교 — 어떤 작품이 최고인가", "산업 구조 — 어떤 원작·제작사가 강한가"])
 
-# ---------------------------------------------------------------- 차트 2: 안정성
-with right, st.container(border=True):
-    st.subheader("② 중요도를 바꿔도 Top 10에 남는 작품")
-    scenarios = {"지금 슬라이더 설정": w, **SCENARIOS}
-    d["hits"] = 0
-    d["which"] = ""
-    for name, sw in scenarios.items():
-        in_top = d.index.isin(d.assign(s=total_score(d, sw)).nlargest(TOP_N, "s").index)
-        d["hits"] += in_top.astype(int)
-        d.loc[in_top, "which"] += name + ", "
-    n_sc = len(scenarios)
-    stable = d[d["hits"] > 0].sort_values(["hits", "total"], ascending=False).head(15)
-    fig = go.Figure(go.Bar(
-        y=stable["label"], x=stable["hits"], orientation="h",
-        marker=dict(color=[ACCENT if h == n_sc else GRAY for h in stable["hits"]], line=dict(width=0)),
-        text=stable["hits"], textposition="outside",
-        customdata=np.stack([stable["title"], stable["which"].str.rstrip(", ")], axis=-1),
-        hovertemplate="%{customdata[0]}<br>Top 10에 든 횟수: %{x}/" + str(n_sc) + "<br>%{customdata[1]}<extra></extra>"))
-    fig.update_xaxes(range=[0, n_sc + 0.5], dtick=1, title=f"Top 10에 든 횟수 (중요도 설정 {n_sc}가지 중)")
-    fig.update_yaxes(autorange="reversed")
-    st.plotly_chart(style(fig, 460), width="stretch")
-    st.caption(f"중요도를 {n_sc}가지로 바꿔 가며(지금 설정, 균등, 끝까지 보기·평점·즐겨찾기·인기 중심) Top 10을 다시 뽑았어요. "
-               f"분홍 막대는 {n_sc}번 모두 Top 10에 든 작품, 즉 **누가 어떤 기준으로 봐도 볼만한 애니**예요. "
-               "마우스를 올리면 어떤 설정에서 들었는지 보여요.")
+with tab_c:
+    # ---------------------------------------------------------------- 차트 1: 종합 점수 Top 10 (답)
+    left, right = st.columns(2)
+    with left, st.container(border=True):
+        st.subheader("① 종합 점수 Top 10 — 이번 질문의 답")
+        fig = go.Figure()
+        ts = top.sort_values("total", ascending=False)
+        wsum = sum(w.values())
+        for name, col, key, color in PARTS:
+            fig.add_bar(y=ts["label"], x=ts[col] * w[key] / wsum * 100, name=name, orientation="h",
+                        marker=dict(color=color, line=dict(width=0)), customdata=ts["title"],
+                        hovertemplate="%{customdata}<br>" + name + " 기여: %{x:.1f}점<extra></extra>")
+        fig.add_scatter(x=ts["total"] + 1, y=ts["label"], mode="text", text=ts["total"].round(1).astype(str),
+                        textposition="middle right", showlegend=False, hoverinfo="skip")
+        fig.update_layout(barmode="stack")
+        fig.update_xaxes(range=[0, 112], tickvals=[0, 25, 50, 75, 100], title="종합 점수 (0~100)")
+        fig.update_yaxes(autorange="reversed")
+        st.plotly_chart(style(fig, 460), width="stretch")
+        st.caption("막대 전체 길이가 종합 점수(100점 만점)예요. 색 조각은 네 가지 지표가 점수에 얼마나 보탬이 됐는지 보여 줘요. "
+                   "점수는 지금 비교 중인 작품들 사이에서의 상대 평가예요.")
 
-# ---------------------------------------------------------------- 차트 3: 산점도
-left, right = st.columns(2)
-with left, st.container(border=True):
-    st.subheader("③ 평점 × 인기 — 숨은 명작 찾기")
-    q_score, med_pop = d["averageScore"].quantile(0.75), d["popularity"].median()
-    gem = (d["averageScore"] >= q_score) & (d["popularity"] <= med_pop)
-    fig = go.Figure()
-    x0, x1 = 10 ** g_pop_range[0], med_pop
-    y0, y1 = q_score, g_score_range[1]
-    fig.add_scatter(x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0], mode="lines", fill="toself",
-                    line=dict(width=0), fillcolor="rgba(76,141,246,0.10)", hoverinfo="skip",
-                    name="숨은 명작 구역 (평점 상위 25% · 인기 하위 50%)")
-    for mask, name, color in [(~gem, "그 외 작품", GRAY), (gem, "숨은 명작", ACCENT)]:
-        sub = d[mask]
-        fig.add_scatter(x=sub["popularity"], y=sub["averageScore"], mode="markers", name=name,
-                        marker=dict(size=11, color=color, line=dict(width=1.5, color="#1E40AF" if name == "숨은 명작" else "white")),
-                        customdata=np.stack([sub["title"], sub["drop_rate"] * 100], axis=-1),
-                        hovertemplate="%{customdata[0]}<br>평점 %{y}<br>담은 사람 %{x:,}명<br>"
-                                      "중도 포기율 %{customdata[1]:.1f}%<extra></extra>")
-    fig.update_xaxes(type="log", range=g_pop_range, title="인기 — 담은 사람 수 (로그 눈금)",
-                     tickvals=[300, 1000, 3000, 10000, 30000, 100000],
-                     ticktext=["300", "1천", "3천", "1만", "3만", "10만"], minor=dict(showgrid=False))
-    fig.update_yaxes(range=g_score_range, title="평점 (100점 만점)")
-    st.plotly_chart(style(fig, 460), width="stretch")
-    gem_names = "、".join(d.loc[gem, "label"].tolist()[:5]) or "없음"
-    st.caption("세로는 평점, 가로는 인기(담은 사람 수)예요. 인기 차이가 너무 커서 가로 눈금은 1천, 1만처럼 10배씩 벌어져요. "
-               f"분홍 점이 '숨은 명작'(평점 상위 25%인데 인기는 하위 50%) 후보예요: {gem_names}")
+    # ---------------------------------------------------------------- 차트 2: 안정성
+    with right, st.container(border=True):
+        st.subheader("② 중요도를 바꿔도 Top 10에 남는 작품")
+        scenarios = {"지금 슬라이더 설정": w, **SCENARIOS}
+        d["hits"] = 0
+        d["which"] = ""
+        for name, sw in scenarios.items():
+            in_top = d.index.isin(d.assign(s=total_score(d, sw)).nlargest(TOP_N, "s").index)
+            d["hits"] += in_top.astype(int)
+            d.loc[in_top, "which"] += name + ", "
+        n_sc = len(scenarios)
+        stable = d[d["hits"] > 0].sort_values(["hits", "total"], ascending=False).head(15)
+        fig = go.Figure(go.Bar(
+            y=stable["label"], x=stable["hits"], orientation="h",
+            marker=dict(color=[ACCENT if h == n_sc else GRAY for h in stable["hits"]], line=dict(width=0)),
+            text=stable["hits"], textposition="outside",
+            customdata=np.stack([stable["title"], stable["which"].str.rstrip(", ")], axis=-1),
+            hovertemplate="%{customdata[0]}<br>Top 10에 든 횟수: %{x}/" + str(n_sc) + "<br>%{customdata[1]}<extra></extra>"))
+        fig.update_xaxes(range=[0, n_sc + 0.5], dtick=1, title=f"Top 10에 든 횟수 (중요도 설정 {n_sc}가지 중)")
+        fig.update_yaxes(autorange="reversed")
+        st.plotly_chart(style(fig, 460), width="stretch")
+        st.caption(f"중요도를 {n_sc}가지로 바꿔 가며(지금 설정, 균등, 끝까지 보기·평점·즐겨찾기·인기 중심) Top 10을 다시 뽑았어요. "
+                   f"분홍 막대는 {n_sc}번 모두 Top 10에 든 작품, 즉 **누가 어떤 기준으로 봐도 볼만한 애니**예요. "
+                   "마우스를 올리면 어떤 설정에서 들었는지 보여요.")
 
-# ---------------------------------------------------------------- 차트 4: 하차율
-with right, st.container(border=True):
-    st.subheader("④ 작품별 중도 포기율 (하차율)")
-    dd = d.sort_values("drop_rate")
-    in_top = dd["label"].isin(top_labels)
-    fig = go.Figure()
-    for mask, name, color in [(in_top, "종합 점수 Top 10", ACCENT), (~in_top, "그 외", GRAY)]:
-        sub = dd[mask]
-        fig.add_bar(y=sub["label"], x=sub["drop_rate"] * 100, orientation="h", name=name,
-                    marker=dict(color=color, line=dict(width=0)), customdata=sub["title"],
-                    hovertemplate="%{customdata}<br>중도 포기율 %{x:.1f}%<extra></extra>")
-    fig.update_xaxes(range=[0, g_drop_max], title="중도 포기율 (%) — 낮을수록 좋아요")
-    fig.update_yaxes(autorange="reversed", categoryorder="array", categoryarray=dd["label"])
-    st.plotly_chart(style(fig, max(460, 24 * len(dd) + 120)), width="stretch")
-    st.caption("보기 시작한 사람(보는 중·완료·그만둠·보류) 중 중간에 그만둔 사람의 비율이에요. "
-               "막대는 0%에서 시작하고 어느 분기를 골라도 같은 눈금이에요. 분홍 막대는 종합 점수 Top 10 작품이에요.")
+    # ---------------------------------------------------------------- 차트 3: 산점도
+    left, right = st.columns(2)
+    with left, st.container(border=True):
+        st.subheader("③ 평점 × 인기 — 숨은 명작 찾기")
+        q_score, med_pop = d["averageScore"].quantile(0.75), d["popularity"].median()
+        gem = (d["averageScore"] >= q_score) & (d["popularity"] <= med_pop)
+        fig = go.Figure()
+        x0, x1 = 10 ** g_pop_range[0], med_pop
+        y0, y1 = q_score, g_score_range[1]
+        fig.add_scatter(x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0], mode="lines", fill="toself",
+                        line=dict(width=0), fillcolor="rgba(76,141,246,0.10)", hoverinfo="skip",
+                        name="숨은 명작 구역 (평점 상위 25% · 인기 하위 50%)")
+        for mask, name, color in [(~gem, "그 외 작품", GRAY), (gem, "숨은 명작", ACCENT)]:
+            sub = d[mask]
+            fig.add_scatter(x=sub["popularity"], y=sub["averageScore"], mode="markers", name=name,
+                            marker=dict(size=11, color=color, line=dict(width=1.5, color="#1E40AF" if name == "숨은 명작" else "white")),
+                            customdata=np.stack([sub["title"], sub["drop_rate"] * 100], axis=-1),
+                            hovertemplate="%{customdata[0]}<br>평점 %{y}<br>담은 사람 %{x:,}명<br>"
+                                          "중도 포기율 %{customdata[1]:.1f}%<extra></extra>")
+        fig.update_xaxes(type="log", range=g_pop_range, title="인기 — 담은 사람 수 (로그 눈금)",
+                         tickvals=[300, 1000, 3000, 10000, 30000, 100000],
+                         ticktext=["300", "1천", "3천", "1만", "3만", "10만"], minor=dict(showgrid=False))
+        fig.update_yaxes(range=g_score_range, title="평점 (100점 만점)")
+        st.plotly_chart(style(fig, 460), width="stretch")
+        gem_names = "、".join(d.loc[gem, "label"].tolist()[:5]) or "없음"
+        st.caption("세로는 평점, 가로는 인기(담은 사람 수)예요. 인기 차이가 너무 커서 가로 눈금은 1천, 1만처럼 10배씩 벌어져요. "
+                   f"분홍 점이 '숨은 명작'(평점 상위 25%인데 인기는 하위 50%) 후보예요: {gem_names}")
+
+    # ---------------------------------------------------------------- 차트 4: 하차율
+    with right, st.container(border=True):
+        st.subheader("④ 작품별 중도 포기율 (하차율)")
+        dd = d.sort_values("drop_rate")
+        in_top = dd["label"].isin(top_labels)
+        fig = go.Figure()
+        for mask, name, color in [(in_top, "종합 점수 Top 10", ACCENT), (~in_top, "그 외", GRAY)]:
+            sub = dd[mask]
+            fig.add_bar(y=sub["label"], x=sub["drop_rate"] * 100, orientation="h", name=name,
+                        marker=dict(color=color, line=dict(width=0)), customdata=sub["title"],
+                        hovertemplate="%{customdata}<br>중도 포기율 %{x:.1f}%<extra></extra>")
+        fig.update_xaxes(range=[0, g_drop_max], title="중도 포기율 (%) — 낮을수록 좋아요")
+        fig.update_yaxes(autorange="reversed", categoryorder="array", categoryarray=dd["label"])
+        st.plotly_chart(style(fig, max(460, 24 * len(dd) + 120)), width="stretch")
+        st.caption("보기 시작한 사람(보는 중·완료·그만둠·보류) 중 중간에 그만둔 사람의 비율이에요. "
+                   "막대는 0%에서 시작하고 어느 분기를 골라도 같은 눈금이에요. 분홍 막대는 종합 점수 Top 10 작품이에요.")
+
+# ---------------------------------------------------------------- 산업 구조: 원작 유형 / 제작사
+# 작품 하나가 아니라 '어떤 원작·제작사의 작품이 좋은 반응을 얻는가'를 본다.
+with tab_p:
+    st.info("앞 탭이 작품 하나하나를 비교했다면, 여기서는 **원작 종류와 제작사**로 묶어서 어떤 구조의 작품이 좋은 반응을 얻는지 봐요. "
+            "점수는 왼쪽 중요도 설정을 그대로 따르고, 분기마다 따로 계산한 뒤 1\\~4분기 전체를 묶었어요(오래된 분기가 유리해지는 것을 막기 위해서예요).")
+
+    pool = df.copy()
+    if kind == "신작만":
+        pool = pool[~pool["has_prequel"]]
+    elif kind == "후속작만":
+        pool = pool[pool["has_prequel"]]
+    if genres:
+        pool = pool[pool["genres"].apply(lambda gs: any(g in gs.split("|") for g in genres))]
+    pool = pool[pool["popularity"] >= min_pop].dropna(subset=["averageScore", "drop_rate"])
+    scored = []
+    for _, g in pool.groupby("quarter"):
+        if len(g) >= 3:
+            g = add_normalized(g)
+            g["score_all"] = total_score(g, w)
+            scored.append(g)
+    pool = pd.concat(scored) if scored else pool.iloc[0:0]
+    pool["origin"] = pool["source"].map(SOURCE_KO).fillna("기타")
+    pool["studio"] = pool["studio"].map(STUDIO_KO).fillna(pool["studio"]).fillna("미상")
+
+    def median_bar(group_col, min_n=1, top=12):
+        """그룹별 종합 점수 중간값 막대 (이름에 작품 수 표시)."""
+        g = pool.groupby(group_col)["score_all"].agg(["median", "count"]).reset_index()
+        g = g[g["count"] >= min_n].sort_values("median", ascending=False).head(top)
+        if g.empty:
+            return None
+        names = g[group_col] + " (" + g["count"].astype(str) + "편)"
+        fig = go.Figure(go.Bar(y=names, x=g["median"], orientation="h",
+                               marker=dict(color=ACCENT, line=dict(width=0)),
+                               text=g["median"].round(1), textposition="outside",
+                               hovertemplate="%{y}<br>종합 점수 중간값 %{x:.1f}<extra></extra>"))
+        fig.update_xaxes(range=[0, 112], tickvals=[0, 25, 50, 75, 100], title="종합 점수 중간값 (0~100)")
+        fig.update_yaxes(autorange="reversed")
+        return fig
+
+    left, right = st.columns(2)
+    with left, st.container(border=True):
+        st.subheader("⑤ 원작 종류별 종합 점수")
+        fig = median_bar("origin")
+        if fig is None:
+            st.caption("조건에 맞는 작품이 적어서 그릴 수 없어요.")
+        else:
+            st.plotly_chart(style(fig, 360), width="stretch")
+            st.caption("1\\~4분기 작품을 원작 종류로 묶어 종합 점수의 **중간값**을 비교했어요. 괄호 안은 작품 수예요. "
+                       "작품 수가 적은 그룹(오리지널·기타)은 한두 작품에 크게 흔들려요.")
+    with right, st.container(border=True):
+        st.subheader("⑥ 제작사별 종합 점수 (3편 이상)")
+        fig = median_bar("studio", min_n=3)
+        if fig is None:
+            st.caption("조건에 맞는 작품 중 3편 이상 만든 제작사가 없어요. 필터를 조금 풀어 주세요.")
+        else:
+            st.plotly_chart(style(fig, 360), width="stretch")
+            st.caption("1\\~4분기에 3편 이상 만든 제작사만, 종합 점수 **중간값**이 높은 순으로 보여 줘요. "
+                       "작품 수가 3\\~6편이라 '그 제작사의 실력'이라기보다 참고용 숫자예요.")
 
 # ---------------------------------------------------------------- 표 + 집계 기준
 with st.expander("작품별 숫자 표 보기"):
     show = d.sort_values("total", ascending=False)[
         ["title", "title_native", "total", "averageScore", "popularity", "drop_rate", "fav_rate", "has_prequel",
          "studio", "status"]]
+    show["studio"] = show["studio"].map(STUDIO_KO).fillna(show["studio"])
     show = show.rename(columns={"title": "제목", "title_native": "일본어 원제", "total": "종합점수",
                                 "averageScore": "평점", "popularity": "인기(담은 사람 수)",
                                 "drop_rate": "중도 포기율(하차율)", "fav_rate": "즐겨찾기 비율", "has_prequel": "후속작", "studio": "스튜디오",
@@ -430,7 +505,11 @@ TMDB의 제목은 시리즈 단위라 부제(예: 'OO편')가 빠진 경우가 �
 **종합 점수**: 네 지표를 0~1로 맞춘 뒤(중도 포기율은 낮을수록 높은 점수가 되게 뒤집어서) 중요도(가중치)대로 섞고 100점 만점으로 바꿨어요.
 지금 조건으로 걸러진 작품들끼리 비교하는 상대 점수예요. 담은 사람이 최소 기준보다 적은 작품과, 평점·중도 포기율을 계산할 수 없는 작품은 뺐어요.
 
+**원작 종류·제작사 비교(⑤⑥)**: 1~4분기 작품을 묶어 비교하되, 종합 점수는 분기 안에서 따로 계산한 뒤 합쳤어요. 중요도 설정은 그대로 따라요.
+
 **한계**
+- 소비자와 제작·투자자의 입장을 비교하려 했지만, 작품별 매출과 제작비가 공개되어 있지 않아서 하지 못했어요. 이 대시보드는 시청자 반응만 다뤄요.
+- 원작 종류·제작사 비교는 작품 수가 적은 그룹이 있어서 참고용이에요.
 - 수집한 날의 스냅샷이라, 방영 중인 작품은 숫자가 계속 변해요.
 - 후속작은 전작을 좋아한 사람만 봐서 평점이 높게 나오는 편향이 있어요. 그래서 신작/후속작 필터를 뒀어요.
 - AniList는 해외 이용자 비중이 커서 한국 시청자의 취향과 다를 수 있어요.

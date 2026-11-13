@@ -63,6 +63,12 @@ STUDIO_KO = {
     "Sunrise": "선라이즈", "J.C.STAFF": "J.C.스태프", "bones film": "본즈 필름", "Satelight": "새틀라이트",
     "Passione": "파시오네", "diomedéa": "디오메데아",
 }
+# 스트리밍 플랫폼 이름 -> 한국어 표기. 목록에 없는 곳은 원래 이름 그대로 보여 준다.
+PLATFORM_KO = {
+    "Crunchyroll": "크런치롤", "YouTube": "유튜브", "Bilibili TV": "비리비리 TV", "iQ": "iQIYI(아이치이)",
+    "Netflix": "넷플릭스", "Amazon Prime Video": "아마존 프라임 비디오", "HIDIVE": "하이다이브",
+    "Hulu": "훌루", "Disney Plus": "디즈니+", "OceanVeil": "오션베일", "Viki": "비키", "Laftel": "라프텔",
+}
 SOURCE_KO = {"MANGA": "만화", "LIGHT_NOVEL": "라이트노벨", "ORIGINAL": "오리지널"}  # 그 외는 '기타'
 FONT = "Noto Sans KR, sans-serif"
 
@@ -303,6 +309,11 @@ st.markdown(
     f'<div class="stat mint"><span>중도 포기율(하차율) 중간값</span><b>{d["drop_rate"].median() * 100:.1f}%</b></div>'
     f'<div class="stat blue"><span>평점 평균 (100점 만점)</span><b>{d["averageScore"].mean():.1f}</b></div>'
     '</div>', unsafe_allow_html=True)
+if kind == "전체":
+    n_seq = int(top["has_prequel"].sum())
+    if n_seq >= 3:
+        st.info(f"지금 Top {len(top)} 중 **{n_seq}편이 후속작**이에요. 후속작은 1기를 끝까지 본 팬들이 주로 보니까 중도 포기율이 낮고 "
+                "평점이 높게 나와서, '전체'로 보면 유리해요. 새로 나온 작품끼리만 보려면 왼쪽에서 **신작만**을 골라 주세요.")
 if n_before > len(d):
     st.caption(f"평점이나 하차율을 계산할 수 없는 작품 {n_before - len(d)}개는 제외했어요.")
 n_airing = int((d["status"] == "RELEASING").sum())
@@ -339,9 +350,9 @@ with tab_c:
                         marker=dict(color=color, line=dict(width=0)), customdata=ts["title"],
                         hovertemplate="%{customdata}<br>" + name + " 기여: %{x:.1f}점<extra></extra>")
         fig.add_scatter(x=ts["total"] + 1, y=ts["label"], mode="text", text=ts["total"].round(1).astype(str),
-                        textposition="middle right", showlegend=False, hoverinfo="skip")
+                        textposition="middle right", showlegend=False, hoverinfo="skip", cliponaxis=False)
         fig.update_layout(barmode="stack")
-        fig.update_xaxes(range=[0, 112], tickvals=[0, 25, 50, 75, 100], title="종합 점수 (0~100)")
+        fig.update_xaxes(range=[0, 118], tickvals=[0, 25, 50, 75, 100], title="종합 점수 (0~100)")
         fig.update_yaxes(autorange="reversed")
         st.plotly_chart(style(fig, 460), width="stretch")
         st.caption("막대 전체 길이가 종합 점수(100점 만점)예요. 색 조각은 네 가지 지표가 점수에 얼마나 보탬이 됐는지 보여 줘요. "
@@ -362,10 +373,10 @@ with tab_c:
         fig = go.Figure(go.Bar(
             y=stable["label"], x=stable["hits"], orientation="h",
             marker=dict(color=[ACCENT if h == n_sc else GRAY for h in stable["hits"]], line=dict(width=0)),
-            text=stable["hits"], textposition="outside",
+            text=stable["hits"], textposition="outside", cliponaxis=False,
             customdata=np.stack([stable["title"], stable["which"].str.rstrip(", ")], axis=-1),
             hovertemplate="%{customdata[0]}<br>Top 10에 든 횟수: %{x}/" + str(n_sc) + "<br>%{customdata[1]}<extra></extra>"))
-        fig.update_xaxes(range=[0, n_sc + 0.5], dtick=1, title=f"Top 10에 든 횟수 (중요도 설정 {n_sc}가지 중)")
+        fig.update_xaxes(range=[0, n_sc + 0.5], dtick=1, title=f"Top 10에 든 횟수 (최대 {n_sc})")
         fig.update_yaxes(autorange="reversed")
         st.plotly_chart(style(fig, 460), width="stretch")
         st.caption(f"중요도를 {n_sc}가지로 바꿔 가며(지금 설정, 균등, 끝까지 보기·평점·즐겨찾기·인기 중심) Top 10을 다시 뽑았어요. "
@@ -441,25 +452,25 @@ with tab_p:
     pool["origin"] = pool["source"].map(SOURCE_KO).fillna("기타")
     pool["studio"] = pool["studio"].map(STUDIO_KO).fillna(pool["studio"]).fillna("미상")
 
-    def median_bar(group_col, min_n=1, top=12):
+    def median_bar(frame, group_col, min_n=1, top=12):
         """그룹별 종합 점수 중간값 막대 (이름에 작품 수 표시)."""
-        g = pool.groupby(group_col)["score_all"].agg(["median", "count"]).reset_index()
+        g = frame.groupby(group_col)["score_all"].agg(["median", "count"]).reset_index()
         g = g[g["count"] >= min_n].sort_values("median", ascending=False).head(top)
         if g.empty:
             return None
         names = g[group_col] + " (" + g["count"].astype(str) + "편)"
         fig = go.Figure(go.Bar(y=names, x=g["median"], orientation="h",
                                marker=dict(color=ACCENT, line=dict(width=0)),
-                               text=g["median"].round(1), textposition="outside",
+                               text=g["median"].round(1), textposition="outside", cliponaxis=False,
                                hovertemplate="%{y}<br>종합 점수 중간값 %{x:.1f}<extra></extra>"))
-        fig.update_xaxes(range=[0, 112], tickvals=[0, 25, 50, 75, 100], title="종합 점수 중간값 (0~100)")
+        fig.update_xaxes(range=[0, 118], tickvals=[0, 25, 50, 75, 100], title="종합 점수 중간값 (0~100)")
         fig.update_yaxes(autorange="reversed")
         return fig
 
     left, right = st.columns(2)
     with left, st.container(border=True):
         st.subheader("⑤ 원작 종류별 종합 점수")
-        fig = median_bar("origin")
+        fig = median_bar(pool, "origin")
         if fig is None:
             st.caption("조건에 맞는 작품이 적어서 그릴 수 없어요.")
         else:
@@ -468,13 +479,38 @@ with tab_p:
                        "기타는 AniList가 따로 분류한 원작(게임·웹소설·캐릭터 프랜차이즈 등)이 섞여 있어요. 작품 수가 적은 그룹(오리지널·기타)은 한두 작품에 크게 흔들려요.")
     with right, st.container(border=True):
         st.subheader("⑥ 제작사별 종합 점수 (3편 이상)")
-        fig = median_bar("studio", min_n=3)
+        fig = median_bar(pool, "studio", min_n=3)
         if fig is None:
             st.caption("조건에 맞는 작품 중 3편 이상 만든 제작사가 없어요. 필터를 조금 풀어 주세요.")
         else:
             st.plotly_chart(style(fig, 360), width="stretch")
             st.caption("1\\~4분기에 3편 이상 만든 제작사만, 종합 점수 **중간값**이 높은 순으로 보여 줘요. "
                        "작품 수가 3\\~6편이라 '그 제작사의 실력'이라기보다 참고용 숫자예요.")
+
+    # 플랫폼: 작품 하나가 여러 플랫폼에 올라올 수 있어서, 플랫폼마다 그 플랫폼에 올라온 작품을 따로 센다.
+    stream_path = DATA_DIR / "streaming.csv"
+    with st.container(border=True):
+        st.subheader("⑦ 스트리밍 플랫폼별 종합 점수 (3편 이상)")
+        if not stream_path.exists():
+            st.caption("플랫폼 데이터(data/streaming.csv)가 없어요. collect_streaming.py를 실행해 주세요.")
+        else:
+            stream = pd.read_csv(stream_path)
+            stream = stream[stream["site"] != "Laftel"]  # AniList에는 라프텔이 거의 없어서, 라프텔은 공지에서 직접 맞춘 목록으로 대신한다.
+            laftel_path = DATA_DIR / "laftel.csv"
+            if laftel_path.exists():
+                stream = pd.concat([stream, pd.read_csv(laftel_path)[["id"]].assign(site="Laftel")], ignore_index=True)
+            ps = pool.merge(stream, on="id")
+            ps["platform"] = ps["site"].map(PLATFORM_KO).fillna(ps["site"])
+            fig = median_bar(ps, "platform", min_n=3)
+            if fig is None:
+                st.caption("조건에 맞는 작품 중 3편 이상 올라온 플랫폼이 없어요. 필터를 조금 풀어 주세요.")
+            else:
+                st.plotly_chart(style(fig, 400), width="stretch")
+                st.caption("한 작품이 여러 플랫폼에 올라오기도 해서 같은 작품이 여러 막대에 들어가요. "
+                           "**라프텔**은 라프텔 고객센터의 「2026년 1~4분기 공개 작품 안내」 공지에 적힌 제목을 직접 옮겨 AniList 작품과 맞춘 목록이에요(공지에 없어도 라프텔에서 직접 확인한 작품은 더했어요). "
+                           "나머지 플랫폼은 AniList에 달린 스트리밍 링크 기준이라 나라별 서비스 여부를 구분하지 못해서, 한국에서 실제로 볼 수 있는지와는 다를 수 있어요. "
+                           "크런치롤·유튜브처럼 작품 대부분에 걸린 플랫폼은 전체 평균과 비슷하게 나와요. "
+                           "플랫폼이 작품을 좋게 만든다기보다, 어떤 작품이 어디에 올라오는지의 구조를 보는 참고용이에요.")
 
 # ---------------------------------------------------------------- 표 + 집계 기준
 with st.expander("작품별 숫자 표 보기"):
@@ -512,6 +548,8 @@ TMDB의 제목은 시리즈 단위라 부제(예: 'OO편')가 빠진 경우가 �
 - 원작 종류·제작사 비교는 작품 수가 적은 그룹이 있어서 참고용이에요.
 - 수집한 날의 스냅샷이라, 방영 중인 작품은 숫자가 계속 변해요.
 - 후속작은 전작을 좋아한 사람만 봐서 평점이 높게 나오는 편향이 있어요. 그래서 신작/후속작 필터를 뒀어요.
+- 스트리밍 플랫폼(⑦) 중 라프텔은 라프텔 공지(1~4분기 공개 작품 안내)에 올라온 신작·동시 방영 작품 기준이에요. 공지에 없는 작품(이전 분기부터 서비스 중이거나 나중에 추가된 작품)은 빠질 수 있어요(블리치처럼 공지에는 없지만 서비스 중인 작품은 직접 확인해 더했어요). 또한 제목을 한국어 제목으로 맞추는 과정에서 일부는 직접 확인해 고쳤어요.
+- 라프텔 외 플랫폼은 AniList에 달린 링크 기준이라 나라별 서비스 여부를 알 수 없어요. 한국에서 볼 수 있는 곳과는 다를 수 있어요.
 - AniList는 해외 이용자 비중이 커서 한국 시청자의 취향과 다를 수 있어요.
 - 분기끼리는 방영 후 지난 시간이 달라서 숫자를 직접 비교하기 어려워요. 순위는 항상 한 분기 안에서만 매겨요.
 - 중도 포기율과 평점은 함께 움직이는 경향이 있어서(평점이 높은 작품은 포기율도 낮아요), 중요도를 바꿔도 결과가 크게 안 바뀔 수 있어요.

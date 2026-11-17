@@ -223,33 +223,47 @@ df = load_data(data_version())
 # ---------------------------------------------------------------- 사이드바 위젯
 st.sidebar.header("조건 바꾸기")
 
+
+def reset_all():
+    """초기화 횟수를 올리면 모든 위젯의 이름표(key)가 바뀌어서, 위젯이 전부 처음 값으로 다시 만들어진다."""
+    st.session_state["reset_n"] = st.session_state.get("reset_n", 0) + 1
+
+
+rn = st.session_state.get("reset_n", 0)
+st.sidebar.button("처음 설정으로 되돌리기", on_click=reset_all, width="stretch")
+
 quarters = sorted(df["quarter"].unique(),
                   key=lambda q: (int(q.split()[0]), SEASON_ORDER[q.split()[1]]), reverse=True)
 default_idx = quarters.index("2026 SUMMER") if "2026 SUMMER" in quarters else 0
-quarter = st.sidebar.selectbox("분기", quarters, index=default_idx, format_func=quarter_name)
+quarter = st.sidebar.selectbox("분기", quarters, index=default_idx, format_func=quarter_name, key=f"quarter_{rn}")
 
-kind = st.sidebar.radio("신작 / 후속작", ["전체", "신작만", "후속작만"])
+kind = st.sidebar.radio("신작 / 후속작", ["전체", "신작만", "후속작만"], key=f"kind_{rn}")
 
 dq = df[df["quarter"] == quarter]
 all_genres = sorted({g for gs in dq["genres"] for g in gs.split("|") if g})
 genres = st.sidebar.multiselect("장르 (여러 개를 고르면 하나라도 해당하는 작품)", all_genres,
-                                format_func=lambda g: GENRE_KO.get(g, g))
+                                format_func=lambda g: GENRE_KO.get(g, g), key=f"genres_{rn}_{quarter}")
 
-min_pop = st.sidebar.slider("최소 인기 기준 (담은 사람 수)", 0, 30000, 5000, step=500,
+min_pop = st.sidebar.slider("최소 인기 기준 (담은 사람 수)", 0, 30000, 5000, step=500, key=f"min_pop_{rn}",
                             help="이 작품을 '내 목록'에 담은 사람의 수예요(AniList 이용자 기준). 이보다 적은 작품은 평가가 몇 명에 "
                                  "좌우되어 불안정하니 비교에서 뺍니다. 기본값은 5,000명이에요.")
 
 st.sidebar.subheader("무엇을 더 중요하게 볼까요?")
-st.sidebar.caption("숫자가 클수록 종합 점수에 크게 반영돼요. 합이 100이 아니어도 비율로 맞춰져요.")
+st.sidebar.caption("숫자가 클수록 종합 점수에 크게 반영돼요. 합을 100으로 맞출 필요는 없어요.")
 w = dict(
-    drop=st.sidebar.slider("끝까지 본다 (하차율이 낮을수록 ↑)", 0, 100, 40, step=5,
+    drop=st.sidebar.slider("끝까지 본다 (하차율이 낮을수록 ↑)", 0, 100, 40, step=5, key=f"w_drop_{rn}",
                            help="보기 시작한 사람 중 중간에 그만둔 사람(하차)의 비율이 낮을수록 높은 점수를 줘요."),
-    score=st.sidebar.slider("평점", 0, 100, 25, step=5, help="AniList 이용자들이 이 작품에 준 점수(100점 만점)의 평균이에요."),
-    fav=st.sidebar.slider("즐겨찾기 비율", 0, 100, 20, step=5,
+    score=st.sidebar.slider("평점", 0, 100, 25, step=5, key=f"w_score_{rn}", help="AniList 이용자들이 이 작품에 준 점수(100점 만점)의 평균이에요."),
+    fav=st.sidebar.slider("즐겨찾기 비율", 0, 100, 20, step=5, key=f"w_fav_{rn}",
                           help="이 작품을 담은 사람 중에서 즐겨찾기(하트)까지 누른 사람의 비율이에요."),
-    pop=st.sidebar.slider("인기 (담은 사람 수)", 0, 100, 15, step=5,
+    pop=st.sidebar.slider("인기 (담은 사람 수)", 0, 100, 15, step=5, key=f"w_pop_{rn}",
                           help="이 작품을 '내 목록'에 담은 사람의 수예요. 많을수록 많이 알려진 작품이에요."),
 )
+w_total = sum(w.values())
+if w_total > 0:
+    pct = {k: round(v / w_total * 100) for k, v in w.items()}
+    st.sidebar.info(f"**실제 반영 비율**  \n끝까지 {pct['drop']}% · 평점 {pct['score']}% · 즐겨찾기 {pct['fav']}% · 인기 {pct['pop']}%  \n"
+                    "합을 100으로 맞출 필요 없어요. 숫자 사이의 비율만 중요해요.")
 
 # ---------------------------------------------------------------- 조건에 맞게 거르기
 d = dq.copy()
@@ -289,7 +303,8 @@ if kind != "전체":
     chips.append(("pink", kind))
 chips += [("mint", GENRE_KO.get(g, g)) for g in genres]
 chips.append(("blue", f"담은 사람 {min_pop:,}명 이상"))
-chips.append(("yellow", f"중요도: 끝까지 {w['drop']} · 평점 {w['score']} · 즐겨찾기 {w['fav']} · 인기 {w['pop']}"))
+if w_total > 0:
+    chips.append(("yellow", f"중요도: 끝까지 {pct['drop']}% · 평점 {pct['score']}% · 즐겨찾기 {pct['fav']}% · 인기 {pct['pop']}%"))
 st.markdown('<div class="chips">' + "".join(
     f'<span class="chip {c}">{html.escape(t)}</span>' for c, t in chips) + '</div>', unsafe_allow_html=True)
 

@@ -279,7 +279,7 @@ st.markdown(
     '<h1>2026 분기별 최고의 애니는?</h1>'
     f'<p class="q">{html.escape(question)}</p>'
     '<p class="how">평점, 인기, 끝까지 보는 사람의 비율, 즐겨찾기 비율을 합쳐서 종합 점수를 매기고, 작품별로 한 번, 원작 종류·제작사별로 한 번 더 비교했어요.</p>'
-    f'<p class="src">데이터: AniList 공개 데이터 · 한국어 제목: TMDB · 수집 일시: {html.escape(collected_at)}</p>'
+    f'<p class="src">데이터·포스터: AniList 공개 데이터 · 한국어 제목: TMDB · 수집 일시: {html.escape(collected_at)}</p>'
     '</div></div>',
     unsafe_allow_html=True)
 
@@ -544,7 +544,7 @@ with st.expander("작품별 숫자 표 보기"):
 
 with st.expander("점수는 어떻게 계산했나요? (집계 기준과 한계)"):
     st.markdown(f"""
-**데이터**: 애니 이용자 커뮤니티 AniList의 공개 API에서 2026년 1~4분기 TV 애니(성인물 분류 제외)를 **{collected_at}에 한 번** 수집했어요. 앱은 이 CSV 파일만 읽어요.
+**데이터**: 애니 이용자 커뮤니티 AniList의 공개 API에서 2026년 1~4분기 TV 애니(성인물 분류 제외)를 **{collected_at}에 한 번** 수집했어요. 앱은 이 CSV 파일만 읽어요. 1위 카드의 포스터는 AniList가 제공하는 표지 이미지 주소를 불러와 보여 줄 뿐 앱에 저장하지 않아요(저작권은 각 작품의 권리자에게 있어요).
 한국어 제목은 TMDB(The Movie Database) API에서 가져왔고, 없는 작품은 영문 제목으로 표시해요.
 TMDB의 제목은 시리즈 단위라 부제(예: 'OO편')가 빠진 경우가 있어요.
 

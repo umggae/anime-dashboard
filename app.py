@@ -43,6 +43,7 @@ GENRE_KO = {
     "Slice of Life": "일상", "Sports": "스포츠", "Supernatural": "초자연", "Thriller": "스릴러",
 }
 SEASON_MONTHS = {"WINTER": "1~3월", "SPRING": "4~6월", "SUMMER": "7~9월", "FALL": "10~12월"}
+SEASON_START = {"WINTER": 1, "SPRING": 4, "SUMMER": 7, "FALL": 10}  # 분기가 시작하는 달
 
 # 지표 4개: 이름, 정규화된 컬럼, 가중치 키, 차트 색(파스텔)
 PARTS = [
@@ -307,6 +308,12 @@ if w_total > 0:
     chips.append(("yellow", f"중요도: 끝까지 {pct['drop']}% · 평점 {pct['score']}% · 즐겨찾기 {pct['fav']}% · 인기 {pct['pop']}%"))
 st.markdown('<div class="chips">' + "".join(
     f'<span class="chip {c}">{html.escape(t)}</span>' for c, t in chips) + '</div>', unsafe_allow_html=True)
+
+# 데이터를 모은 날에 아직 진행 중이던 분기(예: 11월에 모은 4분기)는 숫자가 더 바뀔 수 있다고 알려 준다.
+c_year, c_month, c_day = int(collected_at[:4]), int(collected_at[5:7]), int(collected_at[8:10])
+if int(q_year) == c_year and SEASON_START[q_season] <= c_month <= SEASON_START[q_season] + 2:
+    st.warning(f"**{q_year}년 {SEASON_KO[q_season].split('(')[0]}는 아직 끝나지 않았어요.** 데이터를 모은 {c_month}월 {c_day}일에도 "
+               "방영 중인 작품이 대부분이라, 평점·하차율·담은 사람 수가 앞으로 계속 변해요. 이 분기의 순위는 잠정적인 결과로 봐 주세요.")
 
 if sum(w.values()) == 0:
     st.warning("중요도가 모두 0이에요. 하나 이상 올려 주세요.")
@@ -579,7 +586,7 @@ TMDB의 제목은 시리즈 단위라 부제(예: 'OO편')가 빠진 경우가 �
 **한계**
 - 소비자와 제작·투자자의 입장을 비교하려 했지만, 작품별 매출과 제작비가 공개되어 있지 않아서 하지 못했어요. 이 대시보드는 시청자 반응만 다뤄요.
 - 원작 종류·제작사 비교는 작품 수가 적은 그룹이 있어서 참고용이에요.
-- 수집한 날의 스냅샷이라, 방영 중인 작품은 숫자가 계속 변해요.
+- 수집한 날의 스냅샷이라, 방영 중인 작품은 숫자가 계속 변해요. 특히 2026년 4분기는 수집한 날에도 끝나지 않은 분기라 결과가 가장 불안정해요.
 - 후속작은 전작을 좋아한 사람만 봐서 평점이 높게 나오는 편향이 있어요. 그래서 신작/후속작 필터를 뒀어요.
 - 스트리밍 플랫폼(⑦) 중 라프텔은 라프텔 공지(1~4분기 공개 작품 안내)에 올라온 신작·동시 방영 작품 기준이에요. 공지에 없는 작품은 하나하나 라프텔에서 직접 검색해 확인했고, 서비스 중인 작품(블리치 등 10편)만 더했어요. 또한 제목을 한국어 제목으로 맞추는 과정에서 일부는 직접 확인해 고쳤어요.
 - 라프텔 외 플랫폼은 AniList에 달린 링크 기준이라 나라별 서비스 여부를 알 수 없어요. 한국에서 볼 수 있는 곳과는 다를 수 있어요.

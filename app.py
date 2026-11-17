@@ -117,8 +117,15 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 .stat span { font-size: .82rem; display: block; color: #6B7280; }
 .stat b { font-size: 1.7rem; line-height: 1.3; display: block; word-break: keep-all; color: #1F2937; }
 .stat.long b { font-size: 1.15rem; }
-.stat.top1 { display: flex; gap: 14px; align-items: center; }
-.stat.top1 img { width: 64px; border-radius: 8px; flex: none; }
+.stat.top1 { grid-column: 1 / -1; display: flex; gap: 22px; align-items: center; padding: 18px 22px; }
+.stat.top1 img { width: 150px; border-radius: 10px; flex: none; box-shadow: 0 2px 10px rgba(31,41,55,.15); }
+.stat.top1 b { font-size: 1.6rem; }
+.stat.top1 em { font-size: 1rem; font-weight: 600; }
+.stat.top1 .facts { margin-top: 10px; }
+.stat.top1 .facts i { font-style: normal; display: inline-block; background: #fff; border: 1px solid #E6EAF0; border-radius: 999px;
+    padding: 2px 12px; margin: 0 6px 6px 0; font-size: .82rem; color: #374151; }
+.stat.top1 small { display: block; font-size: .82rem; color: #6B7280; }
+@media (max-width: 640px) { .stat.top1 { flex-direction: column; align-items: flex-start; gap: 14px; } .stat.top1 img { width: 130px; } }
 .stat em { font-style: normal; font-size: .82rem; color: #3B82F6; }
 
 /* 현재 조건 알약 */
@@ -302,15 +309,21 @@ top_labels = set(top["label"])
 
 # ---------------------------------------------------------------- 요약 숫자
 t1 = top.iloc[0]
-long_cls = " long" if len(t1["title"]) > 12 else ""
 # 1위 작품의 포스터(AniList가 제공하는 표지 이미지). 주소가 없으면 그림 없이 글자만 보여 준다.
 cover = t1["cover_image"] if isinstance(t1["cover_image"], str) else ""
 poster = (f'<img src="{html.escape(cover.replace("/medium/", "/large/"))}" alt="" loading="lazy">' if cover else "")
+genre_txt1 = " · ".join(GENRE_KO.get(g, g) for g in t1["genres"].split("|") if g) if t1["genres"] else ""
+facts = [f"평점 {t1['averageScore']:.0f}", f"중도 포기율 {t1['drop_rate'] * 100:.1f}%", f"담은 사람 {int(t1['popularity']):,}명"]
+facts_html = "".join(f"<i>{html.escape(f)}</i>" for f in facts)
+st.markdown(
+    '<div class="stats">'
+    f'<div class="stat pink top1">{poster}<div><span>종합 점수 1위</span><b>{html.escape(t1["title"])}</b>'
+    f'<em>{t1["total"]:.1f}점</em><div class="facts">{facts_html}</div>'
+    f'<small>{html.escape(genre_txt1)}</small></div></div>'
+    '</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="stats">'
     f'<div class="stat yellow"><span>비교 대상 작품 수</span><b>{len(d)}개</b></div>'
-    f'<div class="stat pink{long_cls} top1">{poster}<div><span>종합 점수 1위</span><b>{html.escape(t1["title"])}</b>'
-    f'<em>{t1["total"]:.1f}점</em></div></div>'
     f'<div class="stat mint"><span>중도 포기율(하차율) 중간값</span><b>{d["drop_rate"].median() * 100:.1f}%</b></div>'
     f'<div class="stat blue"><span>평점 평균 (100점 만점)</span><b>{d["averageScore"].mean():.1f}</b></div>'
     '</div>', unsafe_allow_html=True)

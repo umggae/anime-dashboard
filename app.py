@@ -33,7 +33,7 @@ else:  # 예전 Streamlit
     components.html(NO_TRANSLATE_JS, height=0)
 
 # AniList의 시즌 이름 -> 한국식 분기 이름
-SEASON_KO = {"WINTER": "1분기(겨울)", "SPRING": "2분기(봄)", "SUMMER": "3분기(여름)", "FALL": "4분기(가을)"}
+SEASON_KO = {"WINTER": "1분기", "SPRING": "2분기", "SUMMER": "3분기", "FALL": "4분기"}
 SEASON_ORDER = {"WINTER": 1, "SPRING": 2, "SUMMER": 3, "FALL": 4}
 # AniList의 장르 이름(영어) -> 화면에 보여 줄 한국어 이름. 목록에 없는 장르는 영어 그대로 보여 준다.
 GENRE_KO = {
@@ -175,7 +175,7 @@ def load_data(version):
 
 def quarter_name(q):
     year, season = q.split()
-    return f"{year}년 {SEASON_KO[season]}"
+    return f"{year}년 {SEASON_KO[season]} ({SEASON_MONTHS[season]})"
 
 
 def make_label(d):
